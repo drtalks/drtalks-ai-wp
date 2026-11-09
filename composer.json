@@ -1,0 +1,15 @@
+{
+    "name": "drtalks/drtalks-ai",
+    "description": "Development tooling for the DrTalks AI WordPress plugin.",
+    "type": "wordpress-plugin",
+    "license": "GPL-2.0-or-later",
+    "config": {
+        "allow-plugins": {
+            "dealerdirect/phpcodesniffer-composer-installer": true
+        }
+    },
+    "require-dev": {
+        "wp-coding-standards/wpcs": "^3",
+        "phpcompatibility/phpcompatibility-wp": "*"
+    }
+}

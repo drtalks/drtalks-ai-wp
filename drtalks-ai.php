@@ -1,13 +1,18 @@
 <?php
 /**
- * Plugin Name: DrTalks AI
- * Plugin URI:  https://drtalks.ai
- * Description: Adds the DrTalks AI chat widget to your website. Configure your Widget ID and site domain to get started.
- * Version:     1.0.0
- * Author:      DrTalks
- * Author URI:  https://drtalks.ai
- * License:     GPL-2.0+
- * Text Domain: drtalks-ai
+ * Plugin Name:       DrTalks AI
+ * Plugin URI:        https://drtalks.ai
+ * Description:       Adds the DrTalks AI chat widget to your website. Configure your Widget ID and site domain to get started.
+ * Version:           1.0.0
+ * Requires at least: 6.4
+ * Requires PHP:      7.0
+ * Author:            DrTalks
+ * Author URI:        https://drtalks.ai
+ * License:           GPL-2.0-or-later
+ * License URI:       https://www.gnu.org/licenses/gpl-2.0.html
+ * Text Domain:       drtalks-ai
+ *
+ * @package DrTalks_AI
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -18,33 +23,34 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 define( 'DRTALKS_AI_OPTION', 'drtalks_ai_chat_settings' );
 define( 'DRTALKS_AI_CDN',    'https://cdn.drtalks.ai/v1_0_4/drtalks-doctors-widget.min.js' );
+define( 'DRTALKS_AI_HANDLE', 'drtalks-ai-widget' );
 
 // ─── Page-type exclusion definitions ─────────────────────────────────────────
 
 function drtalks_ai_exclusion_types() {
 	$types = [
-		'front_page'       => 'Homepage (front page)',
-		'search'           => 'Search results pages',
-		'404'              => '404 Not Found pages',
-		'login'            => 'Login page',
-		'blog'             => 'Blog / posts index page',
-		'archive'          => 'Archive pages (categories, tags, dates, authors)',
-		'feed'             => 'RSS / Atom feeds',
+		'front_page'       => __( 'Homepage (front page)', 'drtalks-ai' ),
+		'search'           => __( 'Search results pages', 'drtalks-ai' ),
+		'404'              => __( '404 Not Found pages', 'drtalks-ai' ),
+		'login'            => __( 'Login page', 'drtalks-ai' ),
+		'blog'             => __( 'Blog / posts index page', 'drtalks-ai' ),
+		'archive'          => __( 'Archive pages (categories, tags, dates, authors)', 'drtalks-ai' ),
+		'feed'             => __( 'RSS / Atom feeds', 'drtalks-ai' ),
 	];
 
 	if ( class_exists( 'WooCommerce' ) ) {
-		$types['wc_cart']     = 'WooCommerce — Cart';
-		$types['wc_checkout'] = 'WooCommerce — Checkout';
-		$types['wc_account']  = 'WooCommerce — My Account';
-		$types['wc_thankyou'] = 'WooCommerce — Order confirmation (thank you)';
+		$types['wc_cart']     = __( 'WooCommerce — Cart', 'drtalks-ai' );
+		$types['wc_checkout'] = __( 'WooCommerce — Checkout', 'drtalks-ai' );
+		$types['wc_account']  = __( 'WooCommerce — My Account', 'drtalks-ai' );
+		$types['wc_thankyou'] = __( 'WooCommerce — Order confirmation (thank you)', 'drtalks-ai' );
 	}
 
 	return $types;
 }
 
-// ─── Head injection ───────────────────────────────────────────────────────────
+// ─── Front end: enqueue the widget script ─────────────────────────────────────
 
-add_action( 'wp_head', 'drtalks_ai_inject_widget', 1 );
+add_action( 'wp_enqueue_scripts', 'drtalks_ai_inject_widget' );
 
 function drtalks_ai_inject_widget() {
 	$options   = get_option( DRTALKS_AI_OPTION, [] );
@@ -60,17 +66,47 @@ function drtalks_ai_inject_widget() {
 		return;
 	}
 
-	$widget_id_attr = esc_attr( $widget_id );
-	$domain_attr    = esc_attr( $domain );
-	$defer_attr     = $use_defer ? "\n        defer" : '';
-	$cdn            = esc_url( DRTALKS_AI_CDN );
+	wp_enqueue_script(
+		DRTALKS_AI_HANDLE,
+		DRTALKS_AI_CDN,
+		[],
+		null, // phpcs:ignore WordPress.WP.EnqueuedResourceParameters.MissingVersion -- The CDN URL is already versioned in its path (v1_0_4), so a ?ver= query string is not needed.
+		$use_defer ? [ 'strategy' => 'defer' ] : []
+	);
 
-	echo "\n<!-- DrTalks Chat Widget -->\n";
-	echo "<script src=\"{$cdn}\"{$defer_attr}\n";
-	echo "        data-widget-id=\"{$widget_id_attr}\"\n";
-	echo "        data-site-domain=\"{$domain_attr}\">\n";
-	echo "</script>\n";
-	echo "<!-- End DrTalks Chat Widget -->\n";
+	// Stored on the script so drtalks_ai_script_attributes() can add them to the tag.
+	wp_script_add_data(
+		DRTALKS_AI_HANDLE,
+		'drtalks_ai_attributes',
+		[
+			'data-widget-id'   => $widget_id,
+			'data-site-domain' => $domain,
+		]
+	);
+}
+
+add_filter( 'wp_script_attributes', 'drtalks_ai_script_attributes' );
+
+/**
+ * Adds the widget's data attributes to our script tag only.
+ *
+ * Values are escaped by wp_get_script_tag() when the tag is rendered.
+ *
+ * @param array $attributes Script tag attributes.
+ * @return array
+ */
+function drtalks_ai_script_attributes( $attributes ) {
+	if ( ! isset( $attributes['id'] ) || DRTALKS_AI_HANDLE . '-js' !== $attributes['id'] ) {
+		return $attributes;
+	}
+
+	$data = wp_scripts()->get_data( DRTALKS_AI_HANDLE, 'drtalks_ai_attributes' );
+
+	if ( is_array( $data ) ) {
+		$attributes = array_merge( $attributes, $data );
+	}
+
+	return $attributes;
 }
 
 function drtalks_ai_is_excluded( $options ) {
@@ -94,11 +130,12 @@ function drtalks_ai_is_excluded( $options ) {
 		if ( in_array( 'wc_thankyou', $excluded_types, true ) && function_exists( 'is_wc_endpoint_url' ) && is_wc_endpoint_url( 'order-received' ) ) { return true; }
 	}
 
-	// Custom URL checks
+	// Custom URL checks (skipped when the server does not provide a request URI)
 	$exclude_urls_raw = isset( $options['exclude_urls'] ) ? $options['exclude_urls'] : '';
-	if ( ! empty( $exclude_urls_raw ) ) {
-		$current_url  = home_url( $_SERVER['REQUEST_URI'] );
-		$current_path = parse_url( $current_url, PHP_URL_PATH );
+	if ( ! empty( $exclude_urls_raw ) && isset( $_SERVER['REQUEST_URI'] ) ) {
+		$request_uri  = esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+		$current_url  = home_url( $request_uri );
+		$current_path = wp_parse_url( $current_url, PHP_URL_PATH );
 
 		foreach ( explode( "\n", $exclude_urls_raw ) as $line ) {
 			$line = trim( $line );
@@ -106,7 +143,7 @@ function drtalks_ai_is_excluded( $options ) {
 				continue;
 			}
 			// Match against full URL or just the path, with optional wildcard support
-			$line_path = parse_url( $line, PHP_URL_PATH );
+			$line_path = wp_parse_url( $line, PHP_URL_PATH );
 			$pattern   = $line_path ? $line_path : $line;
 
 			if ( strpos( $pattern, '*' ) !== false ) {
@@ -185,10 +222,10 @@ function drtalks_ai_sanitize( $input ) {
 
 // ─── Plugins page: add Settings link ─────────────────────────────────────────
 
-add_filter( 'plugin_action_links_drtalks-ai/drtalks-ai.php', 'drtalks_ai_action_links' );
+add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'drtalks_ai_action_links' );
 
 function drtalks_ai_action_links( $links ) {
-	$settings_link = '<a href="' . admin_url( 'options-general.php?page=drtalks-ai' ) . '">' . __( 'Settings', 'drtalks-ai' ) . '</a>';
+	$settings_link = '<a href="' . esc_url( admin_url( 'options-general.php?page=drtalks-ai' ) ) . '">' . esc_html__( 'Settings', 'drtalks-ai' ) . '</a>';
 	array_unshift( $links, $settings_link );
 	return $links;
 }
@@ -199,8 +236,8 @@ add_action( 'admin_menu', 'drtalks_ai_add_menu' );
 
 function drtalks_ai_add_menu() {
 	add_options_page(
-		'DrTalks AI Settings',
-		'DrTalks AI',
+		__( 'DrTalks AI Settings', 'drtalks-ai' ),
+		__( 'DrTalks AI', 'drtalks-ai' ),
 		'manage_options',
 		'drtalks-ai',
 		'drtalks_ai_settings_page'
@@ -219,7 +256,7 @@ function drtalks_ai_settings_page() {
 	if ( ! empty( $options['site_domain'] ) ) {
 		$domain = $options['site_domain'];
 	} else {
-		$host   = parse_url( get_site_url(), PHP_URL_HOST );
+		$host   = wp_parse_url( get_site_url(), PHP_URL_HOST );
 		$host   = preg_replace( '#^www\.#i', '', $host );
 		$domain = $host ? $host : '';
 	}
@@ -230,49 +267,64 @@ function drtalks_ai_settings_page() {
 	$excluded_types = isset( $options['exclude_types'] ) && is_array( $options['exclude_types'] ) ? $options['exclude_types'] : [];
 	$exclude_urls   = isset( $options['exclude_urls'] ) ? $options['exclude_urls'] : '';
 
+	$home_link     = '<a href="https://drtalks.ai" target="_blank" rel="noopener">drtalks.ai</a>';
+	$api_keys_link = '<a href="https://drtalks.ai/api-keys" target="_blank" rel="noopener">drtalks.ai/api-keys</a>';
+
 	?>
 	<div class="wrap" id="drtalks-ai-wrap">
 
-		<h1>DrTalks AI – Chat Widget Settings</h1>
+		<h1><?php esc_html_e( 'DrTalks AI – Chat Widget Settings', 'drtalks-ai' ); ?></h1>
 
 		<p style="max-width:640px;color:#555;">
-			This plugin adds the <strong>DrTalks AI chat widget</strong> to every page of your website.
-			To set it up you need two pieces of information from your DrTalks account —
-			a <strong>Widget ID</strong> and your <strong>site domain</strong>.
+			<?php echo wp_kses_post( __( 'This plugin adds the <strong>DrTalks AI chat widget</strong> to every page of your website. To set it up you need two pieces of information from your DrTalks account — a <strong>Widget ID</strong> and your <strong>site domain</strong>.', 'drtalks-ai' ) ); ?>
 		</p>
 
-		<?php if ( isset( $_GET['settings-updated'] ) ) : ?>
-		<div class="notice notice-success is-dismissible">
-			<p><strong>Settings saved.</strong> Your chat widget configuration has been updated.</p>
-		</div>
-		<?php endif; ?>
+		<?php settings_errors( DRTALKS_AI_OPTION ); ?>
 
-		<?php if ( $ready && isset( $_GET['settings-updated'] ) ) : ?>
+		<?php if ( $ready ) : ?>
 		<div class="notice notice-info is-dismissible">
-			<p>Your widget is <strong>active</strong>. The script below is now being added to every page.</p>
+			<p><?php echo wp_kses_post( __( 'Your widget is <strong>active</strong>. The script below is now being added to every page.', 'drtalks-ai' ) ); ?></p>
 		</div>
-		<?php endif; ?>
-
-		<?php if ( ! $ready && ! isset( $_GET['settings-updated'] ) ) : ?>
+		<?php else : ?>
 		<div class="notice notice-warning">
-			<p>The widget is <strong>not yet active</strong> — please enter your <strong>Widget ID</strong> and <strong>Website Domain</strong> below and save.</p>
+			<p><?php echo wp_kses_post( __( 'The widget is <strong>not yet active</strong> — please enter your <strong>Widget ID</strong> and <strong>Website Domain</strong> below and save.', 'drtalks-ai' ) ); ?></p>
 		</div>
 		<?php endif; ?>
 
 		<!-- ─ Step 1: get credentials ─────────────────────────────────────── -->
 		<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px 24px;max-width:680px;margin:24px 0 0;">
-			<h2 style="margin-top:0;font-size:16px;">Step 1 — Find your Widget ID and domain</h2>
+			<h2 style="margin-top:0;font-size:16px;"><?php esc_html_e( 'Step 1 — Find your Widget ID and domain', 'drtalks-ai' ); ?></h2>
 			<ol style="margin:0 0 0 18px;padding:0;line-height:1.9;">
-				<li>Log in to your DrTalks account at <a href="https://drtalks.ai" target="_blank" rel="noopener">drtalks.ai</a>.</li>
-				<li>Go to <a href="https://drtalks.ai/api-keys" target="_blank" rel="noopener"><strong>drtalks.ai/api-keys</strong></a>.</li>
-				<li>Copy the <strong>Widget ID</strong> listed for your website — it looks like <code>widget_yoursite-com_xxxxxxxx</code>.</li>
-				<li>Copy the <strong>Website URL</strong> listed next to your widget — it looks like <code>https://yoursite.com</code>.</li>
+				<li>
+					<?php
+					/* translators: %s: link to the DrTalks website (drtalks.ai). */
+					echo wp_kses_post( sprintf( __( 'Log in to your DrTalks account at %s.', 'drtalks-ai' ), $home_link ) );
+					?>
+				</li>
+				<li>
+					<?php
+					/* translators: %s: link to the DrTalks API keys page (drtalks.ai/api-keys). */
+					echo wp_kses_post( sprintf( __( 'Go to <strong>%s</strong>.', 'drtalks-ai' ), $api_keys_link ) );
+					?>
+				</li>
+				<li>
+					<?php
+					/* translators: %s: example Widget ID, e.g. widget_yoursite-com_xxxxxxxx. */
+					echo wp_kses_post( sprintf( __( 'Copy the <strong>Widget ID</strong> listed for your website — it looks like %s.', 'drtalks-ai' ), '<code>widget_yoursite-com_xxxxxxxx</code>' ) );
+					?>
+				</li>
+				<li>
+					<?php
+					/* translators: %s: example website URL, e.g. https://yoursite.com. */
+					echo wp_kses_post( sprintf( __( 'Copy the <strong>Website URL</strong> listed next to your widget — it looks like %s.', 'drtalks-ai' ), '<code>https://yoursite.com</code>' ) );
+					?>
+				</li>
 			</ol>
 		</div>
 
 		<!-- ─ Step 2: settings form ───────────────────────────────────────── -->
 		<div style="background:#fff;border:1px solid #ddd;border-radius:6px;padding:20px 24px;max-width:680px;margin:16px 0 0;">
-			<h2 style="margin-top:0;font-size:16px;">Step 2 — Enter your details below</h2>
+			<h2 style="margin-top:0;font-size:16px;"><?php esc_html_e( 'Step 2 — Enter your details below', 'drtalks-ai' ); ?></h2>
 
 			<form method="post" action="options.php">
 				<?php settings_fields( DRTALKS_AI_OPTION ); ?>
@@ -281,63 +333,78 @@ function drtalks_ai_settings_page() {
 
 					<tr>
 						<th scope="row">
-							<label for="drtalks_widget_id">Widget ID</label>
+							<label for="drtalks_widget_id"><?php esc_html_e( 'Widget ID', 'drtalks-ai' ); ?></label>
 						</th>
 						<td>
 							<input
 								type="text"
 								id="drtalks_widget_id"
-								name="<?php echo DRTALKS_AI_OPTION; ?>[widget_id]"
+								name="<?php echo esc_attr( DRTALKS_AI_OPTION ); ?>[widget_id]"
 								value="<?php echo esc_attr( $widget_id ); ?>"
 								class="regular-text"
 								placeholder="widget_yoursite-com_xxxxxxxx"
 								autocomplete="off"
 							/>
 							<p class="description">
-								Copy this exactly from
-								<a href="https://drtalks.ai/api-keys" target="_blank" rel="noopener">drtalks.ai/api-keys</a>.
+								<?php
+								/* translators: %s: link to the DrTalks API keys page (drtalks.ai/api-keys). */
+								echo wp_kses_post( sprintf( __( 'Copy this exactly from %s.', 'drtalks-ai' ), $api_keys_link ) );
+								?>
 							</p>
 						</td>
 					</tr>
 
 					<tr>
 						<th scope="row">
-							<label for="drtalks_site_domain">Website Domain</label>
+							<label for="drtalks_site_domain"><?php esc_html_e( 'Website Domain', 'drtalks-ai' ); ?></label>
 						</th>
 						<td>
 							<input
 								type="text"
 								id="drtalks_site_domain"
-								name="<?php echo DRTALKS_AI_OPTION; ?>[site_domain]"
+								name="<?php echo esc_attr( DRTALKS_AI_OPTION ); ?>[site_domain]"
 								value="<?php echo esc_attr( $domain ); ?>"
 								class="regular-text"
 								placeholder="yoursite.com"
 								autocomplete="off"
 							/>
 							<p class="description">
-								Copy the <strong>Website URL</strong> shown next to your widget on
-								<a href="https://drtalks.ai/api-keys" target="_blank" rel="noopener">drtalks.ai/api-keys</a>.
-								You can paste the full URL — the plugin will automatically strip
-								<code>http://</code>, <code>https://</code>, and <code>www.</code> for you.
+								<?php
+								echo wp_kses_post(
+									sprintf(
+										/* translators: 1: link to the DrTalks API keys page, 2: "http://", 3: "https://", 4: "www.". */
+										__( 'Copy the <strong>Website URL</strong> shown next to your widget on %1$s. You can paste the full URL — the plugin will automatically strip %2$s, %3$s, and %4$s for you.', 'drtalks-ai' ),
+										$api_keys_link,
+										'<code>http://</code>',
+										'<code>https://</code>',
+										'<code>www.</code>'
+									)
+								);
+								?>
 							</p>
 						</td>
 					</tr>
 
 					<tr>
-						<th scope="row">Script loading</th>
+						<th scope="row"><?php esc_html_e( 'Script loading', 'drtalks-ai' ); ?></th>
 						<td>
 							<label>
 								<input
 									type="checkbox"
-									name="<?php echo DRTALKS_AI_OPTION; ?>[defer_script]"
+									name="<?php echo esc_attr( DRTALKS_AI_OPTION ); ?>[defer_script]"
 									value="1"
 									<?php checked( $defer, true ); ?>
 								/>
-								Load script with <code>defer</code> <em>(recommended)</em>
+								<?php
+								/* translators: %s: the word "defer" formatted as code. */
+								echo wp_kses_post( sprintf( __( 'Load script with %s <em>(recommended)</em>', 'drtalks-ai' ), '<code>defer</code>' ) );
+								?>
 							</label>
 							<p class="description">
-								<code>defer</code> lets the page load first and then fetches the widget in the background,
-								which is better for page speed. Only uncheck this if you have a specific reason to.
+								<?php
+								/* translators: %s: the word "defer" formatted as code. */
+								echo wp_kses_post( sprintf( __( '%s lets the page load first and then fetches the widget in the background, which is better for page speed. Only uncheck this if you have a specific reason to.', 'drtalks-ai' ), '<code>defer</code>' ) );
+								?>
 							</p>
 						</td>
 					</tr>
@@ -346,22 +413,21 @@ function drtalks_ai_settings_page() {
 
 				<!-- ─ Exclusions ───────────────────────────────────────────── -->
 				<hr style="margin:24px 0;">
-				<h3 style="margin-top:0;">Hide widget on specific pages</h3>
+				<h3 style="margin-top:0;"><?php esc_html_e( 'Hide widget on specific pages', 'drtalks-ai' ); ?></h3>
 				<p style="color:#555;margin-bottom:16px;">
-					The widget loads on every page by default. Use the options below to prevent it from
-					appearing on pages where it isn't appropriate.
+					<?php esc_html_e( "The widget loads on every page by default. Use the options below to prevent it from appearing on pages where it isn't appropriate.", 'drtalks-ai' ); ?>
 				</p>
 
 				<table class="form-table" role="presentation" style="margin-top:0;">
 
 					<tr>
-						<th scope="row">Page types</th>
+						<th scope="row"><?php esc_html_e( 'Page types', 'drtalks-ai' ); ?></th>
 						<td>
 							<?php foreach ( drtalks_ai_exclusion_types() as $key => $label ) : ?>
 							<label style="display:block;margin-bottom:6px;">
 								<input
 									type="checkbox"
-									name="<?php echo DRTALKS_AI_OPTION; ?>[exclude_types][]"
+									name="<?php echo esc_attr( DRTALKS_AI_OPTION ); ?>[exclude_types][]"
 									value="<?php echo esc_attr( $key ); ?>"
 									<?php checked( in_array( $key, $excluded_types, true ), true ); ?>
 								/>
@@ -369,37 +435,45 @@ function drtalks_ai_settings_page() {
 							</label>
 							<?php endforeach; ?>
 							<p class="description" style="margin-top:8px;">
-								Tick any page types where the chat widget should <strong>not</strong> appear.
+								<?php echo wp_kses_post( __( 'Tick any page types where the chat widget should <strong>not</strong> appear.', 'drtalks-ai' ) ); ?>
 							</p>
 						</td>
 					</tr>
 
 					<tr>
 						<th scope="row">
-							<label for="drtalks_exclude_urls">Specific URLs</label>
+							<label for="drtalks_exclude_urls"><?php esc_html_e( 'Specific URLs', 'drtalks-ai' ); ?></label>
 						</th>
 						<td>
 							<textarea
 								id="drtalks_exclude_urls"
-								name="<?php echo DRTALKS_AI_OPTION; ?>[exclude_urls]"
+								name="<?php echo esc_attr( DRTALKS_AI_OPTION ); ?>[exclude_urls]"
 								rows="6"
 								class="large-text code"
 								placeholder="/members/&#10;/contact/&#10;https://yoursite.com/some-page/"
 							><?php echo esc_textarea( $exclude_urls ); ?></textarea>
 							<p class="description">
-								Enter one URL or path per line. You can use a full URL
-								(<code>https://yoursite.com/contact/</code>) or just the path
-								(<code>/contact/</code>). Trailing slashes are ignored.<br>
-								Use <code>*</code> as a wildcard to match any sub-path —
-								for example <code>/my-account/*</code> will hide the widget on
-								<code>/my-account/orders/</code>, <code>/my-account/edit-address/</code>, and so on.
+								<?php
+								echo wp_kses_post(
+									sprintf(
+										/* translators: 1: example full URL, 2: example path, 3: wildcard character, 4: example wildcard rule, 5: first example matched path, 6: second example matched path. */
+										__( 'Enter one URL or path per line. You can use a full URL (%1$s) or just the path (%2$s). Trailing slashes are ignored.<br>Use %3$s as a wildcard to match any sub-path — for example %4$s will hide the widget on %5$s, %6$s, and so on.', 'drtalks-ai' ),
+										'<code>https://yoursite.com/contact/</code>',
+										'<code>/contact/</code>',
+										'<code>*</code>',
+										'<code>/my-account/*</code>',
+										'<code>/my-account/orders/</code>',
+										'<code>/my-account/edit-address/</code>'
+									)
+								);
+								?>
 							</p>
 						</td>
 					</tr>
 
 				</table>
 
-				<?php submit_button( 'Save Settings' ); ?>
+				<?php submit_button( __( 'Save Settings', 'drtalks-ai' ) ); ?>
 
 			</form>
 		</div>
@@ -407,11 +481,12 @@ function drtalks_ai_settings_page() {
 		<?php if ( $ready ) : ?>
 		<!-- ─ Preview ─────────────────────────────────────────────────────── -->
 		<div style="background:#f6f7f7;border:1px solid #ddd;border-radius:6px;padding:20px 24px;max-width:680px;margin:16px 0 24px;">
-			<h2 style="margin-top:0;font-size:16px;">Preview — code added to your site's &lt;head&gt;</h2>
+			<h2 style="margin-top:0;font-size:16px;"><?php esc_html_e( "Preview — code added to your site's <head>", 'drtalks-ai' ); ?></h2>
 			<pre style="background:#1e1e1e;color:#d4d4d4;padding:16px;border-radius:4px;overflow-x:auto;font-size:13px;line-height:1.6;margin:0;"><?php
 $defer_preview = $defer ? "\n        defer" : '';
-echo htmlspecialchars(
+echo esc_html(
 	"<!-- DrTalks Chat Widget -->\n"
+	// phpcs:ignore WordPress.WP.EnqueuedResources.NonEnqueuedScript -- Display-only text shown inside <pre> and escaped with esc_html(); it is never output as a script tag. The real script is enqueued in drtalks_ai_inject_widget().
 	. "<script src=\"" . DRTALKS_AI_CDN . "\"{$defer_preview}\n"
 	. "        data-widget-id=\"{$widget_id}\"\n"
 	. "        data-site-domain=\"{$domain}\">\n"
@@ -420,7 +495,7 @@ echo htmlspecialchars(
 );
 			?></pre>
 			<p style="margin:10px 0 0;color:#666;font-size:13px;">
-				This widget is currently <strong>active</strong> on your site.
+				<?php echo wp_kses_post( __( 'This widget is currently <strong>active</strong> on your site.', 'drtalks-ai' ) ); ?>
 			</p>
 		</div>
 		<?php endif; ?>

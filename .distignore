@@ -1,0 +1,12 @@
+# Files and folders excluded from the WordPress.org release zip.
+.git
+.gitignore
+.distignore
+.DS_Store
+.claude
+.phpcs.xml.dist
+phpcs.xml
+composer.json
+composer.lock
+vendor
+node_modules
